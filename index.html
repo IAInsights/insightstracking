@@ -451,7 +451,7 @@ button.home-compliance-row:focus-visible{outline:2px solid var(--blue);outline-o
         <ul id="home_validation_agencies" class="home-agency-counts"></ul>
       </section>
       <section class="home-panel">
-        <div class="home-panel-head"><h3>Closing Soon by Agency</h3></div>
+        <div class="home-panel-head"><h3>Pending Closing Check by Agency</h3></div>
         <ul id="home_closing_agencies" class="home-agency-counts"></ul>
       </section>
     </div>
@@ -1095,7 +1095,7 @@ async function home_initIfNeeded(forceReload=false,prefetchedRows=null,complianc
   home_initialized=true;home_loading=true;home_complianceLoading=false;home_error='';home_closingError='';home_closingRows=[];home_render();
   try{
     const today=homeToday();
-    const closingPromise=sbGetAll(`InsightsTracking?select=id,company_ids,report_type_ids,enddate,cancelled_date,not_sent_date,first_report_date,email_sent_date&enddate=gte.${ocToday()}&enddate=lte.${ocPlusDays(5)}&order=enddate.asc`)
+    const closingPromise=sbGetAll(`InsightsTracking?select=id,company_ids,report_type_ids,enddate,cancelled_date,not_sent_date,final_delivered_report,first_report_date,email_sent_date&enddate=gte.${ocPlusDays(-19)}&enddate=lte.${ocPlusDays(5)}&final_delivered_report=is.null&order=enddate.desc`)
       .then(rows=>{home_closingRows=rows.filter(ocIsClosingCandidate);},error=>{home_closingError=operationsReadableError(error);});
     const rows=Array.isArray(prefetchedRows)?prefetchedRows:await sbGetAll(`InsightsTracking?select=*&startdate=not.is.null&startdate=lte.${today}&enddate=gte.${today}&order=enddate.asc`);
     home_campaigns=rows.filter(record=>!record.cancelled_date&&!record.not_sent_date&&!rcIsNoReporting(record)&&!rcIsStandby(record,rows)&&homeIsBiInsights(record));
@@ -1760,7 +1760,7 @@ const ocStatusSelect='id,Title,client,brand,sapcode,mission_id,store,brand_ids,s
 const ocFallbackSelect='id,Title,client,brand,sapcode,mission_id,store,brand_ids,store_ids,sector_ids,client_fk,company_ids,report_type_ids,account_manager_id,startdate,enddate,powerbi_url,powerbi_title,contactName_Email,final_delivered_report,first_report_date,email_sent_date,cancelled_date,not_sent_date';
 const ocToday=()=>new Date().toISOString().split('T')[0];
 const ocPlusDays=days=>{const date=new Date();date.setDate(date.getDate()+days);return date.toISOString().split('T')[0];};
-const ocIsClosingCandidate=record=>!record.cancelled_date&&!record.not_sent_date&&!rcIsNoReporting(record);
+const ocIsClosingCandidate=record=>!record.cancelled_date&&!rcIsNoReporting(record);
 const ocCountdownLabel=enddate=>{
   const end=Date.parse(`${enddate||''}T00:00:00Z`),today=Date.parse(`${ocToday()}T00:00:00Z`);
   if(!Number.isFinite(end)||!Number.isFinite(today))return 'N-?';
@@ -1788,22 +1788,22 @@ function oc_refreshOnFocus(){
 document.addEventListener('visibilitychange',oc_refreshOnFocus);
 window.addEventListener('focus',oc_refreshOnFocus);
 async function oc_load(){
-  const list=document.getElementById('oc-list');if(list)list.innerHTML='<div class="oc-empty">Loading animations ending soon…</div>';
+  const list=document.getElementById('oc-list');if(list)list.innerHTML='<div class="oc-empty">Loading pending final reports…</div>';
   try{
-    const from=ocToday(),closingFrom=ocPlusDays(-1),to=ocPlusDays(5),historyFrom=ocPlusDays(-30);
+    const from=ocToday(),closingFrom=ocPlusDays(-19),to=ocPlusDays(5),historyFrom=ocPlusDays(-30);
     try{
-      oc_rows=await sbGet(`InsightsTracking?select=${ocSelect}&enddate=gte.${closingFrom}&enddate=lte.${to}&final_delivered_report=is.null&order=enddate.asc`);
+      oc_rows=await sbGetAll(`InsightsTracking?select=${ocSelect}&enddate=gte.${closingFrom}&enddate=lte.${to}&final_delivered_report=is.null&order=enddate.desc`);
       oc_sentRows=await sbGet(`InsightsTracking?select=${ocSelect}&final_delivered_report=gte.${historyFrom}&final_delivered_report=lte.${from}&order=final_delivered_report.desc`);
       oc_schemaReady=true;
     }catch(missionIdsError){
       try{
         // mission_ids is optional during rollout. Keep the live Closing Check
         // values even when that newer column has not been added yet.
-        oc_rows=await sbGet(`InsightsTracking?select=${ocStatusSelect}&enddate=gte.${closingFrom}&enddate=lte.${to}&final_delivered_report=is.null&order=enddate.asc`);
+        oc_rows=await sbGetAll(`InsightsTracking?select=${ocStatusSelect}&enddate=gte.${closingFrom}&enddate=lte.${to}&final_delivered_report=is.null&order=enddate.desc`);
         oc_sentRows=await sbGet(`InsightsTracking?select=${ocStatusSelect}&final_delivered_report=gte.${historyFrom}&final_delivered_report=lte.${from}&order=final_delivered_report.desc`);
         oc_schemaReady=true;
       }catch(statusColumnsError){
-        oc_rows=await sbGet(`InsightsTracking?select=${ocFallbackSelect}&enddate=gte.${closingFrom}&enddate=lte.${to}&final_delivered_report=is.null&order=enddate.asc`);
+        oc_rows=await sbGetAll(`InsightsTracking?select=${ocFallbackSelect}&enddate=gte.${closingFrom}&enddate=lte.${to}&final_delivered_report=is.null&order=enddate.desc`);
         oc_sentRows=await sbGet(`InsightsTracking?select=${ocFallbackSelect}&final_delivered_report=gte.${historyFrom}&final_delivered_report=lte.${from}&order=final_delivered_report.desc`);
         oc_rows.forEach(record=>{record.reporting_compliant=false;record.kpis_ok=false;record.global_feedback_received=false;});
         oc_schemaReady=false;
@@ -1824,10 +1824,10 @@ function oc_select(id){oc_selectedId=id;oc_render();}
 function oc_readOnlyCheck(value,label,help){return `<div class="oc-check"><span class="oc-check-icon ${value?'ok':'missing'}">${value?'✓':'✕'}</span><div><div class="oc-check-label">${esc(label)}</div><div class="oc-check-help">${esc(help)}</div></div><span class="oc-state ${value?'ok':'missing'}">${value?'Complete':'Missing'}</span></div>`;}
 function oc_render(){
   const rows=oc_filteredRows(),list=document.getElementById('oc-list'),sub=document.getElementById('oc-subline');
-  if(sub)sub.textContent=`${rows.length} unsent animation${rows.length===1?'':'s'} from N+1 to N-5 · final client-send requirements${oc_schemaReady?'':' · database setup required'}`;
+  if(sub)sub.textContent=`${rows.length} pending final report${rows.length===1?'':'s'} · stays until Sent or N+20${oc_schemaReady?'':' · database setup required'}`;
   oc_renderHistory();
   if(!list)return;
-  if(!rows.length){list.innerHTML='<div class="oc-empty">No unsent final reports from N+1 to N-5 match these filters.</div>';document.getElementById('oc-detail').innerHTML='<div class="oc-empty">No animation selected.</div>';return;}
+  if(!rows.length){list.innerHTML='<div class="oc-empty">No pending final reports match these filters.</div>';document.getElementById('oc-detail').innerHTML='<div class="oc-empty">No animation selected.</div>';return;}
   if(!rows.some(record=>String(record.id)===String(oc_selectedId)))oc_selectedId=rows[0].id;
   list.innerHTML=`<table class="oc-table"><colgroup><col style="width:70px"><col style="width:235px"><col style="width:105px"><col style="width:105px"><col style="width:135px"><col style="width:150px"><col style="width:95px"><col style="width:135px"></colgroup><thead><tr><th>Alert</th><th>Animation / mission</th><th>Reporting Check</th><th>SAP code</th><th>Operation dates</th><th>Compliance</th><th>KPIs</th><th>Global Feedback</th></tr></thead><tbody>${rows.map(record=>{const selected=String(record.id)===String(oc_selectedId),pct=Number.isFinite(record.reporting_compliance_pct)?`${record.reporting_compliance_pct}% · ${record.reporting_compliance_reported}/${record.reporting_compliance_total}`:'—',absent=Number(record.reporting_compliance_absent)||0,backup=Number(record.reporting_compliance_backup)||0;return `<tr class="oc-row${selected?' selected':''}" onclick="oc_select(${record.id})"><td><span class="oc-alert">${ocCountdownLabel(record.enddate)}</span></td><td><div class="oc-name">${esc(record.Title||'Untitled animation')}</div><div class="oc-meta">${esc(ocClient(record))}</div><span class="oc-meta">Mission ${ocMissionLinks(record)}</span></td><td><button class="oc-mission" onclick="event.stopPropagation();oc_openReporting(${record.id})">Open check →</button></td><td><span class="oc-sap">${ocSapLink(record.sapcode)}</span></td><td><div>${fd(record.startdate)||'—'}</div><div class="oc-meta">to ${fd(record.enddate)||'—'}</div></td><td><span class="oc-state ${record.reporting_compliant?'ok':'missing'}">${pct}</span><div class="oc-meta">Absent: ${absent}${backup?` · Backup: ${backup}`:''}</div></td><td><span class="oc-state ${record.kpis_ok?'ok':'missing'}">${record.kpis_ok?'✓ OK':'✕ Missing'}</span></td><td><span class="oc-state ${record.global_feedback_received?'ok':'missing'}">${record.global_feedback_received?'✓ Received':'✕ Missing'}</span></td></tr>`;}).join('')}</tbody></table>`;
   oc_renderDetail(rows.find(record=>String(record.id)===String(oc_selectedId))||rows[0]);
